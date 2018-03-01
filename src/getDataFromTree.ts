@@ -1,29 +1,13 @@
-import {
-  Children,
-  ReactElement,
-  ReactNode,
-  Component,
-  ComponentType,
-  ComponentClass,
-  ChildContextProvider,
-} from 'react';
+import { Children, ReactElement, ReactNode, Component, ComponentType, ComponentClass } from 'react';
 import ApolloClient from 'apollo-client';
-
-export interface Context<Cache> {
-  client?: ApolloClient<Cache>;
-  store?: any;
-  [key: string]: any;
-}
 
 export interface QueryTreeArgument<Cache> {
   rootElement: ReactElement<any>;
-  rootContext?: Context<Cache>;
 }
 
 export interface QueryTreeResult<Cache> {
   query: Promise<Object>;
   element: ReactElement<any>;
-  context: Context<Cache>;
 }
 
 interface PreactElement<P> {
@@ -44,47 +28,51 @@ function isComponentClass(Comp: ComponentType<any>): Comp is ComponentClass<any>
   return Comp.prototype && (Comp.prototype.render || Comp.prototype.isReactComponent);
 }
 
-function providesChildContext(
-  instance: Component<any>,
-): instance is Component<any> & ChildContextProvider<any> {
-  return !!(instance as any).getChildContext;
-}
-
 // Recurse a React Element tree, running visitor on each element.
 // If visitor returns `false`, don't call the element's render function
 //   or recurse into its child elements
 export function walkTree<Cache>(
   element: ReactNode,
-  context: Context<Cache>,
   visitor: (
     element: ReactElement<any> | string | number,
     instance: Component<any> | null,
-    context: Context<Cache>,
   ) => boolean | void,
 ) {
   if (Array.isArray(element)) {
-    element.forEach(item => walkTree(item, context, visitor));
+    element.forEach(item => walkTree(item, visitor));
 
     return;
   }
 
   if (!element) return;
 
+  /*
+   *
+   * New react context API
+   * XXX this is a first pass
+   *
+   */
   // a stateless functional component or a class
   if (isReactElement(element)) {
-    if (typeof element.type === 'function') {
+    // if this is a provider (would be nice to do a symbol check here)
+    if (element.type.context) {
+      // attach the value to the provider
+      element.type.context.currentValue = element.props.value;
+    }
+
+    const isConsumer = element.type.Provider && element.type.Consumer;
+    // duck type check since we don't have symbols
+    if (typeof element.type === 'function' || isConsumer) {
       const Comp = element.type;
       const props = Object.assign({}, Comp.defaultProps, getProps(element));
-      let childContext = context;
       let child;
 
       // Are we are a react class?
       //   https://github.com/facebook/react/blob/master/src/renderers/shared/stack/reconciler/ReactCompositeComponent.js#L66
       if (isComponentClass(Comp)) {
-        const instance = new Comp(props, context);
+        const instance = new Comp(props);
         // In case the user doesn't pass these to super in the constructor
         instance.props = instance.props || props;
-        instance.context = instance.context || context;
         // set the instance state to null (not undefined) if not set, to match React behaviour
         instance.state = instance.state || null;
 
@@ -94,10 +82,7 @@ export function walkTree<Cache>(
         //   componentWillMount, which happens *before* render).
         instance.setState = newState => {
           if (typeof newState === 'function') {
-            // React's TS type definitions don't contain context as a third parameter for
-            // setState's updater function.
-            // Remove this cast to `any` when that is fixed.
-            newState = (newState as any)(instance.state, instance.props, instance.context);
+            newState = newState(instance.state, instance.props);
           }
           instance.state = Object.assign({}, instance.state, newState);
         };
@@ -108,48 +93,45 @@ export function walkTree<Cache>(
           instance.componentWillMount();
         }
 
-        if (providesChildContext(instance)) {
-          childContext = Object.assign({}, context, instance.getChildContext());
-        }
-
-        if (visitor(element, instance, context) === false) {
+        if (visitor(element, instance) === false) {
           return;
         }
 
         child = instance.render();
+      } else if (isConsumer) {
+        // handle consumers
+        child = element.props.children(element.type.currentValue);
       } else {
         // just a stateless functional
-        if (visitor(element, null, context) === false) {
+        if (visitor(element, null) === false) {
           return;
         }
 
-        child = Comp(props, context);
+        child = Comp(props);
       }
 
       if (child) {
         if (Array.isArray(child)) {
-          child.forEach(item => walkTree(item, context, visitor));
+          child.forEach(item => walkTree(item, visitor));
         } else {
-          walkTree(child, childContext, visitor);
+          walkTree(child, visitor);
         }
       }
     } else {
       // a basic string or dom element, just get children
-      if (visitor(element, null, context) === false) {
+      if (visitor(element, null) === false) {
         return;
       }
 
       if (element.props && element.props.children) {
         Children.forEach(element.props.children, (child: any) => {
-          if (child) {
-            walkTree(child, context, visitor);
-          }
+          if (child) walkTree(child, visitor);
         });
       }
     }
   } else if (typeof element === 'string' || typeof element === 'number') {
     // Just visit these, they are leaves so we don't keep traversing.
-    visitor(element, null, context);
+    visitor(element, null);
   }
   // TODO: Portals?
 }
@@ -165,19 +147,19 @@ function isPromise<T>(query: Object): query is Promise<T> {
 }
 
 function getQueriesFromTree<Cache>(
-  { rootElement, rootContext = {} }: QueryTreeArgument<Cache>,
+  { rootElement }: QueryTreeArgument<Cache>,
   fetchRoot: boolean = true,
 ): QueryTreeResult<Cache>[] {
   const queries: QueryTreeResult<Cache>[] = [];
 
-  walkTree(rootElement, rootContext, (element, instance, context) => {
+  walkTree(rootElement, (element, instance) => {
     const skipRoot = !fetchRoot && element === rootElement;
     if (skipRoot) return;
 
     if (instance && isReactElement(element) && hasFetchDataFunction(instance)) {
       const query = instance.fetchData();
       if (isPromise<Object>(query)) {
-        queries.push({ query, element, context });
+        queries.push({ query, element });
 
         // Tell walkTree to not recurse inside this component;  we will
         // wait for the query to execute before attempting it.
@@ -192,19 +174,18 @@ function getQueriesFromTree<Cache>(
 // XXX component Cache
 export default function getDataFromTree(
   rootElement: ReactElement<any>,
-  rootContext: any = {},
   fetchRoot: boolean = true,
 ): Promise<void> {
-  let queries = getQueriesFromTree({ rootElement, rootContext }, fetchRoot);
+  let queries = getQueriesFromTree({ rootElement }, fetchRoot);
 
   // no queries found, nothing to do
   if (!queries.length) return Promise.resolve();
 
   const errors: any[] = [];
   // wait on each query that we found, re-rendering the subtree when it's done
-  const mappedQueries = queries.map(({ query, element, context }) => {
+  const mappedQueries = queries.map(({ query, element }) => {
     // we've just grabbed the query for element, so don't try and get it again
-    return query.then(_ => getDataFromTree(element, context, false)).catch(e => errors.push(e));
+    return query.then(_ => getDataFromTree(element, false)).catch(e => errors.push(e));
   });
 
   // Run all queries. If there are errors, still wait for all queries to execute

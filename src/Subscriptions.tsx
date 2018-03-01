@@ -1,10 +1,8 @@
 import * as React from 'react';
-import * as PropTypes from 'prop-types';
 import ApolloClient, { ApolloError } from 'apollo-client';
-import { Observable } from 'apollo-client/util/Observable';
-
 import { DocumentNode } from 'graphql';
 import { ZenObservable } from 'zen-observable-ts';
+import { ApolloConsumer as Consumer } from './Context';
 import { OperationVariables } from './types';
 
 const shallowEqual = require('fbjs/lib/shallowEqual');
@@ -27,67 +25,59 @@ export interface SubscriptionState<TData = any> {
   loading: boolean;
   data?: TData;
   error?: ApolloError;
+  client: ApolloClient;
+  props: SubscriptionProps;
 }
 
-export interface SubscriptionContext {
-  client: ApolloClient<Object>;
-}
+const getInitialState = props => ({
+  loading: true,
+  error: undefined,
+  data: undefined,
+  props,
+});
 
 class Subscription<TData = any, TVariables = any> extends React.Component<
   SubscriptionProps<TData, TVariables>,
   SubscriptionState<TData>
 > {
-  static contextTypes = {
-    client: PropTypes.object.isRequired,
-  };
-
-  static propTypes = {
-    query: PropTypes.object.isRequired,
-    variables: PropTypes.object,
-    children: PropTypes.func.isRequired,
-  };
-
-  private client: ApolloClient<any>;
-  private queryObservable: Observable<any>;
+  private queryObservable: ZenObservable.Observable<any>;
   private querySubscription: ZenObservable.Subscription;
 
-  constructor(props: SubscriptionProps<TData, TVariables>, context: SubscriptionContext) {
-    super(props, context);
+  static getDerivedStateFromProps(
+    nextProps: SubscriptionProps<TData, TVariables>,
+    prevState: SubscriptionState,
+  ) {
+    const shouldNotResubscribe = prevState.props.shouldResubscribe === false;
+    if (shallowEqual(nextProps, prevState.props) || shouldNotResubscribe) {
+      return null;
+    }
 
-    invariant(
-      !!context.client,
-      `Could not find "client" in the context of Subscription. Wrap the root component in an <ApolloProvider>`,
-    );
-    this.client = context.client;
+    return getInitialState(nextProps);
+  }
+
+  constructor(props: SubscriptionProps<TData, TVariables>) {
+    super(props);
+
     this.initialize(props);
-    this.state = this.getInitialState();
+    this.state = getInitialState(props);
   }
 
   componentDidMount() {
     this.startSubscription();
   }
 
-  componentWillReceiveProps(
-    nextProps: SubscriptionProps<TData, TVariables>,
-    nextContext: SubscriptionContext,
-  ) {
-    if (shallowEqual(this.props, nextProps) && this.client === nextContext.client) {
-      return;
-    }
-    const shouldNotResubscribe = this.props.shouldResubscribe === false;
-    if (this.client !== nextContext.client) {
-      this.client = nextContext.client;
-    }
+  componentDidUpdate(prevProps: SubscriptionProps<TData, TVariables>) {
+    if (shallowEqual(this.props, prevProps)) return;
+    const shouldNotResubscribe = prevProps.shouldResubscribe === false;
 
     if (!shouldNotResubscribe) {
       this.endSubscription();
       delete this.queryObservable;
-      this.initialize(nextProps);
+      this.initialize(this.props);
       this.startSubscription();
-      this.setState(this.getInitialState());
       return;
     }
-    this.initialize(nextProps);
+    this.initialize(this.props);
     this.startSubscription();
   }
 
@@ -104,7 +94,7 @@ class Subscription<TData = any, TVariables = any> extends React.Component<
 
   private initialize = (props: SubscriptionProps<TData, TVariables>) => {
     if (this.queryObservable) return;
-    this.queryObservable = this.client.subscribe({
+    this.queryObservable = props.client.subscribe({
       query: props.query,
       variables: props.variables,
     });
@@ -118,18 +108,8 @@ class Subscription<TData = any, TVariables = any> extends React.Component<
     });
   };
 
-  private getInitialState = () => ({
-    loading: true,
-    error: undefined,
-    data: undefined,
-  });
-
   private updateCurrentData = (result: SubscriptionResult<TData>) => {
-    this.setState({
-      data: result.data,
-      loading: false,
-      error: undefined,
-    });
+    this.setState({ data: result.data, loading: false, error: undefined });
   };
 
   private updateError = (error: any) => {
@@ -147,4 +127,8 @@ class Subscription<TData = any, TVariables = any> extends React.Component<
   };
 }
 
-export default Subscription;
+export default class ApolloSubscription extends React.Component {
+  render() {
+    return <Consumer>{client => <Subscription client={client} {...this.props} />}</Consumer>;
+  }
+}
