@@ -35,7 +35,6 @@
     "prefilesize": "npm run compile",
     "prettier": "prettier --write \"./**/*.{js,jsx,ts*,md,graphql,json}\"",
     "test": "npm run lint && npm run type-check && npm run jest",
-    "test-preact": "jest --config ./jest.preact.config.json --no-cache",
     "test-watch": "jest --watch",
     "test:compiled": "npm run test:compiled:browser:umd && npm run test:compiled:server:umd && npm run test:compiled:cjs",
     "test:compiled:browser:umd": "jest --config jest.browser.umd.config.js",
@@ -122,8 +121,6 @@
     "husky": "0.14.3",
     "jest": "22.4.2",
     "jsdom": "11.6.2",
-    "preact": "8.2.7",
-    "preact-compat": "3.18.0",
     "prettier": "1.11.0",
     "pretty-quick": "1.4.1",
     "react": "^16.4.0-alpha.0911da3",
@@ -147,9 +144,7 @@
   "dependencies": {
     "fbjs": "^0.8.16",
     "hoist-non-react-statics": "^2.3.1",
-    "invariant": "^2.2.2",
-    "lodash": "4.17.5",
-    "prop-types": "^15.6.0"
+    "invariant": "^2.2.2"
   },
   "sideEffects": false
 }
