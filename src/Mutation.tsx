@@ -63,25 +63,23 @@ export interface MutationState<TData = any> {
   error?: ApolloError;
   data?: TData;
   loading?: boolean;
-  client: ApolloClient;
+  client: ApolloClient<any>;
+}
+
+export interface InnerMutationProps<TData = any, TVariables = OperationVariables>
+  extends MutationProps<TData, TVariables> {
+  client: ApolloClient<any>;
 }
 
 class Mutation<TData = any, TVariables = OperationVariables> extends React.Component<
-  MutationProps<TData, TVariables>,
+  InnerMutationProps<TData, TVariables>,
   MutationState<TData>
 > {
   private mostRecentMutationId: number;
-
-  constructor(props: MutationProps<TData, TVariables>) {
-    super(props);
-
-    this.verifyDocumentIsMutation(props.mutation);
-
-    this.mostRecentMutationId = 0;
-    this.state = { notCalled: true, client: props.client };
-  }
-
-  static getDerivedStateFromProps = (nextProps, prevState) => {
+  static getDerivedStateFromProps = (
+    nextProps: InnerMutationProps<any, any>,
+    prevState: MutationState<any>,
+  ) => {
     if (nextProps.client !== prevState.client) {
       return {
         notCalled: true,
@@ -90,8 +88,16 @@ class Mutation<TData = any, TVariables = OperationVariables> extends React.Compo
     }
     return null;
   };
+  constructor(props: InnerMutationProps<TData, TVariables>) {
+    super(props);
 
-  componentDidUpdate(prevProps: MutationProps<TData, TVariables>) {
+    this.verifyDocumentIsMutation(props.mutation);
+
+    this.mostRecentMutationId = 0;
+    this.state = { notCalled: true, client: props.client };
+  }
+
+  componentDidUpdate(prevProps: InnerMutationProps<TData, TVariables>) {
     if (shallowEqual(this.props, prevProps)) return;
 
     if (this.props.mutation !== prevProps.mutation) {
@@ -201,7 +207,10 @@ class Mutation<TData = any, TVariables = OperationVariables> extends React.Compo
   };
 }
 
-export default class ApolloMutation extends React.Component {
+export default class ApolloMutation<
+  TData = any,
+  TVariables = OperationVariables
+> extends React.Component<MutationProps<TData, TVariables>> {
   render() {
     return <Consumer>{client => <Mutation client={client} {...this.props} />}</Consumer>;
   }

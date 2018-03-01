@@ -1,7 +1,7 @@
 import * as React from 'react';
 import ApolloClient, { ApolloError } from 'apollo-client';
 import { DocumentNode } from 'graphql';
-import { ZenObservable } from 'zen-observable-ts';
+import { ZenObservable, Observable } from 'zen-observable-ts';
 import { ApolloConsumer as Consumer } from './Context';
 import { OperationVariables } from './types';
 
@@ -21,15 +21,19 @@ export interface SubscriptionProps<TData = any, TVariables = OperationVariables>
   children: (result: SubscriptionResult<TData>) => React.ReactNode;
 }
 
+export interface InnerSubscriptionProps<TData = any, TVariables = OperationVariables>
+  extends SubscriptionProps<TData, TVariables> {
+  client: ApolloClient<any>;
+}
+
 export interface SubscriptionState<TData = any> {
   loading: boolean;
   data?: TData;
   error?: ApolloError;
-  client: ApolloClient;
   props: SubscriptionProps;
 }
 
-const getInitialState = props => ({
+const getInitialState = (props: InnerSubscriptionProps<any, any>) => ({
   loading: true,
   error: undefined,
   data: undefined,
@@ -37,14 +41,14 @@ const getInitialState = props => ({
 });
 
 class Subscription<TData = any, TVariables = any> extends React.Component<
-  SubscriptionProps<TData, TVariables>,
+  InnerSubscriptionProps<TData, TVariables>,
   SubscriptionState<TData>
 > {
-  private queryObservable: ZenObservable.Observable<any>;
+  private queryObservable: Observable<any>;
   private querySubscription: ZenObservable.Subscription;
 
   static getDerivedStateFromProps(
-    nextProps: SubscriptionProps<TData, TVariables>,
+    nextProps: InnerSubscriptionProps<any, any>,
     prevState: SubscriptionState,
   ) {
     const shouldNotResubscribe = prevState.props.shouldResubscribe === false;
@@ -55,7 +59,7 @@ class Subscription<TData = any, TVariables = any> extends React.Component<
     return getInitialState(nextProps);
   }
 
-  constructor(props: SubscriptionProps<TData, TVariables>) {
+  constructor(props: InnerSubscriptionProps<TData, TVariables>) {
     super(props);
 
     this.initialize(props);
@@ -66,7 +70,7 @@ class Subscription<TData = any, TVariables = any> extends React.Component<
     this.startSubscription();
   }
 
-  componentDidUpdate(prevProps: SubscriptionProps<TData, TVariables>) {
+  componentDidUpdate(prevProps: InnerSubscriptionProps<TData, TVariables>) {
     if (shallowEqual(this.props, prevProps)) return;
     const shouldNotResubscribe = prevProps.shouldResubscribe === false;
 
@@ -92,7 +96,7 @@ class Subscription<TData = any, TVariables = any> extends React.Component<
     return this.props.children(result);
   }
 
-  private initialize = (props: SubscriptionProps<TData, TVariables>) => {
+  private initialize = (props: InnerSubscriptionProps<TData, TVariables>) => {
     if (this.queryObservable) return;
     this.queryObservable = props.client.subscribe({
       query: props.query,
@@ -127,7 +131,10 @@ class Subscription<TData = any, TVariables = any> extends React.Component<
   };
 }
 
-export default class ApolloSubscription extends React.Component {
+export default class ApolloSubscription<
+  TData = any,
+  TVariables = OperationVariables
+> extends React.Component<SubscriptionProps<TData, TVariables>> {
   render() {
     return <Consumer>{client => <Subscription client={client} {...this.props} />}</Consumer>;
   }

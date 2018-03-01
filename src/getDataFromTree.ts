@@ -55,15 +55,15 @@ export function walkTree<Cache>(
   // a stateless functional component or a class
   if (isReactElement(element)) {
     // if this is a provider (would be nice to do a symbol check here)
-    if (element.type.context) {
+    if ((element.type as any).context) {
       // attach the value to the provider
-      element.type.context.currentValue = element.props.value;
+      ((element.type as any).context as any).currentValue = element.props.value;
     }
 
-    const isConsumer = element.type.Provider && element.type.Consumer;
+    const isConsumer = (element.type as any).Provider && (element.type as any).Consumer;
     // duck type check since we don't have symbols
     if (typeof element.type === 'function' || isConsumer) {
-      const Comp = element.type;
+      const Comp = element.type as ComponentType<any>;
       const props = Object.assign({}, Comp.defaultProps, getProps(element));
       let child;
 
@@ -100,7 +100,7 @@ export function walkTree<Cache>(
         child = instance.render();
       } else if (isConsumer) {
         // handle consumers
-        child = element.props.children(element.type.currentValue);
+        child = element.props.children((element.type as any).currentValue);
       } else {
         // just a stateless functional
         if (visitor(element, null) === false) {
