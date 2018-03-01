@@ -1,9 +1,19 @@
 # Change log
 
-### vNext
+### vNext (@latest)
 
 * Fix default values being set as falsy in options merging
 * Remove console.error call for unhandled errors for query-hoc (but keep in place for graphql hoc for backwards compat)
+
+### vNext (@canary)
+
+* Remove compose and proptypes
+* Drop support for Preact
+
+### 3.0.0-alpha.0
+
+* Refactor to use react 16.3 methods for strict mode compat
+* Add initial support for async on <Query /> via asyncMode prop
 
 ### 2.1.0-beta.3
 
