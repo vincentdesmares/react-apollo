@@ -101,6 +101,7 @@ export interface QueryProps<TData = any, TVariables = OperationVariables> {
   displayName?: string;
   skip?: boolean;
   client?: ApolloClient<Object>;
+  asyncMode?: boolean;
 }
 
 export interface InnerQueryProps<TData = any, TVariables = OperationVariables>
@@ -220,7 +221,7 @@ class Query<TData = any, TVariables = OperationVariables> extends React.Componen
   fetchData(): Promise<ApolloQueryResult<any>> | boolean {
     if (this.props.skip) return false;
     // pull off react options
-    const { children, ssr, displayName, skip, client, ...opts } = this.props;
+    const { children, ssr, displayName, skip, client, asyncMode, ...opts } = this.props;
 
     let { fetchPolicy } = opts;
     if (ssr === false) return false;
@@ -341,6 +342,11 @@ class Query<TData = any, TVariables = OperationVariables> extends React.Componen
 
     if (evictData) this.previousData = {};
     if (loading) {
+      // only throw if we are still in a loading state
+      if (this.props.asyncMode) {
+        // async mode wants to throw a promise that waits for the data to be loaded
+        throw this.state.queryObservable!.result();
+      }
       Object.assign(data.data, this.previousData, currentResult.data);
     } else if (error) {
       Object.assign(data, {
